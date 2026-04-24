@@ -1,0 +1,25 @@
+node_modules/
+.next/
+out/
+
+# Secrets — never commit these.
+.env
+.env.local
+.env*.local
+credentials/
+credentials.json
+google-service-account.json
+*-service-account*.json
+*.pem
+*.key
+
+# OS / editor cruft
+.DS_Store
+*.log
+.vscode/
+
+# Vercel local link metadata (safe, but no need in source)
+.vercel/
+
+# One-off diagnostic scripts
+__diag.mjs
