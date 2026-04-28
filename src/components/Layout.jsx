@@ -1,11 +1,22 @@
+import Link from "next/link";
+import { useRouter } from "next/router";
 import SourceBadges from "./SourceBadges";
 
 /**
- * App shell. Navy header with brand wordmark, orange accent rule, and a
- * responsive padded container. Designed for mobile, tablet and desktop —
- * the header collapses stacked < 640px wide.
+ * App shell. Navy header with brand wordmark, page-tabs row, orange
+ * accent rule, and a responsive padded container. Mobile-friendly —
+ * the header collapses < 640px and the tabs scroll horizontally if
+ * they don't fit.
  */
+const NAV_TABS = [
+  { href: "/", label: "Dashboard" },
+  { href: "/meta-ads-comparison", label: "Lead Ads vs Website" },
+];
+
 export default function Layout({ children, sources }) {
+  const router = useRouter();
+  const activePath = router?.pathname || "/";
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-ibn-navy text-white">
@@ -28,6 +39,31 @@ export default function Layout({ children, sources }) {
           </div>
           <SourceBadges sources={sources} />
         </div>
+        <nav
+          aria-label="Primary"
+          className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10"
+        >
+          <ul className="flex gap-1 overflow-x-auto -mb-px">
+            {NAV_TABS.map((tab) => {
+              const isActive = activePath === tab.href;
+              return (
+                <li key={tab.href}>
+                  <Link
+                    href={tab.href}
+                    className={`inline-block whitespace-nowrap text-sm px-3 sm:px-4 py-2.5 border-b-2 transition-colors ${
+                      isActive
+                        ? "border-ibn-orange text-white font-semibold"
+                        : "border-transparent text-white/70 hover:text-white"
+                    }`}
+                    aria-current={isActive ? "page" : undefined}
+                  >
+                    {tab.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
         <div className="h-1 bg-ibn-orange" />
       </header>
 

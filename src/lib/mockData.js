@@ -70,7 +70,7 @@ export const MOCK_META_CAMPAIGNS = [
   },
   {
     campaignId: "m-102",
-    campaignName: "IBN-2145_Carlisle_Retargeting_VIC",
+    campaignName: "IBN-2145 Carlisle Website Retargeting VIC",
     jobNumber: "IBN-2145",
     platform: "meta",
     spend: 1240.8,
@@ -80,7 +80,7 @@ export const MOCK_META_CAMPAIGNS = [
   },
   {
     campaignId: "m-103",
-    campaignName: "IBN-2160_Henley_Prospecting_NATIONAL",
+    campaignName: "IBN-2160 Henley Lead Ads NATIONAL",
     jobNumber: "IBN-2160",
     platform: "meta",
     spend: 3980.0,
@@ -90,7 +90,7 @@ export const MOCK_META_CAMPAIGNS = [
   },
   {
     campaignId: "m-104",
-    campaignName: "IBN-2172_Simonds_Prospecting_VIC",
+    campaignName: "IBN-2172 Simonds Website Prospecting VIC",
     jobNumber: "IBN-2172",
     platform: "meta",
     spend: 2615.25,
@@ -100,7 +100,7 @@ export const MOCK_META_CAMPAIGNS = [
   },
   {
     campaignId: "m-105",
-    campaignName: "IBN-2189_Metricon_Prospecting_VIC",
+    campaignName: "IBN-2189 Metricon Lead Ads VIC",
     jobNumber: "IBN-2189",
     platform: "meta",
     spend: 5620.4,
@@ -110,7 +110,7 @@ export const MOCK_META_CAMPAIGNS = [
   },
   {
     campaignId: "m-106",
-    campaignName: "IBN-2203_Boutique_Prospecting_VIC",
+    campaignName: "IBN-2203 Boutique Website Prospecting VIC",
     jobNumber: "IBN-2203",
     platform: "meta",
     spend: 1820.0,

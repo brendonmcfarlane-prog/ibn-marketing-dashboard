@@ -32,6 +32,7 @@
 
 import { readSheetRange, shouldUseSheetsMock } from "./sheets";
 import { MOCK_META_CAMPAIGNS } from "./mockData";
+import { classifyAdType } from "./adType";
 
 const DEFAULT_RANGE = "'Data - Spend - IBN/HS'!A1:AZ50000";
 
@@ -48,7 +49,13 @@ function shouldUseMock() {
  */
 export async function fetchMetaCampaigns({ since, until } = {}) {
   if (shouldUseMock()) {
-    return { source: "mock", campaigns: MOCK_META_CAMPAIGNS };
+    // Mock data was authored before adType existed — derive it on the way
+    // out so mock + live paths return the same shape.
+    const tagged = MOCK_META_CAMPAIGNS.map((c) => ({
+      ...c,
+      adType: c.adType || classifyAdType(c.campaignName),
+    }));
+    return { source: "mock", campaigns: tagged };
   }
 
   const range = process.env.META_SPEND_SHEET_RANGE || DEFAULT_RANGE;
@@ -163,6 +170,9 @@ export async function fetchMetaCampaigns({ since, until } = {}) {
       campaignName: campaignName || campaignId,
       jobNumber: jobFromColumn || jobFromName || null,
       platform: "meta",
+      // Ad type is derived from the campaign name (contains "Website" =
+      // Website, anything else = Lead Ads). See src/lib/adType.js.
+      adType: classifyAdType(campaignName || campaignId),
       spend: 0,
       impressions: 0,
       clicks: 0,
@@ -180,6 +190,10 @@ export async function fetchMetaCampaigns({ since, until } = {}) {
     }
     if (!existing.campaignName && campaignName) {
       existing.campaignName = campaignName;
+      // Reclassify now that we have the real name — earlier rows in the
+      // same campaign block may have left it blank, defaulting to Lead
+      // Ads, when the name actually carries a "Website" token.
+      existing.adType = classifyAdType(campaignName);
     }
 
     byCampaign.set(campaignId, existing);
