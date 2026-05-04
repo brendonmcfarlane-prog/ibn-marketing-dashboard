@@ -51,7 +51,7 @@ const COL = {
 // in case the team's value spelling drifts (e.g. "FB" vs "Facebook").
 const DEFAULT_PAID_VALUES = ["yes", "y", "true", "1", "paid"];
 const DEFAULT_SOURCE_VALUES = ["facebook", "meta", "fb", "instagram", "ig"];
-const DEFAULT_CAMPAIGN_TYPE_VALUES = ["website"];
+const DEFAULT_CAMPAIGN_TYPE_VALUES = [];
 
 let _leadsLoggedOnce = false;
 
