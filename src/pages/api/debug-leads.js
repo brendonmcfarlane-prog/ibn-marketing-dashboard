@@ -26,7 +26,6 @@ export default async function handler(req, res) {
     const allMetaCampaigns = metaResult.campaigns;
 
     const survivingLeads = [];
-    let unmatched = 0;
     for (const r of dataRows) {
       const created = normaliseDate(cell(r, COL.CREATED_DATE));
       if (!created || (since && created < since) || (until && created > until)) continue;
@@ -37,52 +36,30 @@ export default async function handler(req, res) {
       const pv = cell(r, COL.PAID).trim().toLowerCase();
       if (!PAID.includes(pv)) continue;
       const m = matchLeadToCampaign(utm, websiteCampaigns);
-      survivingLeads.push({ createdDate: created, builderName: cell(r, COL.BUILDER_NAME), utm, matched: m ? m.campaignName : null });
-      if (!m) unmatched += 1;
+      survivingLeads.push({
+        createdDate: created,
+        builderName: cell(r, COL.BUILDER_NAME),
+        source: cell(r, COL.SOURCE),
+        utm,
+        matched: m ? m.campaignName : null,
+        matchedAnyMeta: !!matchLeadToCampaign(utm, allMetaCampaigns),
+      });
     }
+    const unmatched = survivingLeads.filter((l) => !l.matched);
 
     const result = {
       ok: true,
       range: { since, until },
-      totals: { surviving: survivingLeads.length, matched: survivingLeads.length - unmatched, unmatched },
+      totals: { surviving: survivingLeads.length, matched: survivingLeads.length - unmatched.length, unmatched: unmatched.length },
+      unmatchedLeads: unmatched,
       websiteCampaignsInRange: websiteCampaigns.map((c) => c.campaignName),
     };
 
     if (q) {
-      const qMatch = (s) => String(s || "").toLowerCase().includes(q);
-      result.queryMatchesInSheet = [];
-      for (const r of dataRows) {
-        const utm = cell(r, COL.CAMPAIGN);
-        const builder = cell(r, COL.BUILDER_NAME);
-        if (!qMatch(utm) && !qMatch(builder)) continue;
-        const created = normaliseDate(cell(r, COL.CREATED_DATE));
-        const inRange = created && (!since || created >= since) && (!until || created <= until);
-        const sv = cell(r, COL.SOURCE).trim().toLowerCase();
-        const pv = cell(r, COL.PAID).trim().toLowerCase();
-        const utmTrim = utm.trim();
-        result.queryMatchesInSheet.push({
-          createdDate: created || cell(r, COL.CREATED_DATE),
-          inRange,
-          builderName: builder,
-          source: cell(r, COL.SOURCE),
-          paid: cell(r, COL.PAID),
-          campaignType_K: cell(r, COL.CAMPAIGN_TYPE),
-          trafficChannel_X: cell(r, COL.TRAFFIC_CHANNEL),
-          utm,
-          flags: {
-            passDate: !!inRange,
-            passSource: SOURCE.includes(sv),
-            passPaid: PAID.includes(pv),
-            passNonEmptyUtm: !!utmTrim,
-            suffixMatchAnyMeta: !!matchLeadToCampaign(utm, allMetaCampaigns),
-            suffixMatchWebsite: !!matchLeadToCampaign(utm, websiteCampaigns),
-          },
-        });
-      }
-      result.queryMatchesInWebsiteCampaigns = websiteCampaigns.filter((c) => qMatch(c.campaignName)).map((c) => c.campaignName);
-      result.queryMatchesInAllCampaigns = allMetaCampaigns.filter((c) => qMatch(c.campaignName)).map((c) => ({ name: c.campaignName, adType: c.adType }));
+      const qm = (s) => String(s || "").toLowerCase().includes(q);
+      result.queryMatchesInSheet = survivingLeads.filter((l) => qm(l.utm) || qm(l.builderName));
+      result.queryMatchesInAllCampaigns = allMetaCampaigns.filter((c) => qm(c.campaignName)).map((c) => ({ name: c.campaignName, adType: c.adType }));
     }
-
     return res.status(200).json(result);
   } catch (err) {
     console.error("[api/debug-leads]", err);
