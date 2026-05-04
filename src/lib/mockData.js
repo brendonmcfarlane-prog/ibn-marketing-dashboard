@@ -150,6 +150,37 @@ export const MOCK_REFERRALS = MOCK_PIPEDRIVE_DEALS
     };
   });
 
+// Leads-Master-shaped: each row is one website lead form fill, tagged
+// with its UTM campaign value (the placement-prefixed campaign name).
+// Only Website-classified Meta campaigns get mock leads — Lead Ads
+// campaigns capture leads in-platform and don't land in this sheet.
+export const MOCK_LEADS = [
+  // m-102 IBN-2145 Carlisle Website Retargeting VIC — 38 leads
+  ...generateLeads(
+    "IBN-2145",
+    "Carlisle Homes",
+    "VIC",
+    "Facebook_Mobile_Feed_IBN-2145 Carlisle Website Retargeting VIC",
+    38
+  ),
+  // m-104 IBN-2172 Simonds Website Prospecting VIC — 65 leads
+  ...generateLeads(
+    "IBN-2172",
+    "Simonds Homes",
+    "VIC",
+    "Instagram_Stories_IBN-2172 Simonds Website Prospecting VIC",
+    65
+  ),
+  // m-106 IBN-2203 Boutique Website Prospecting VIC — 41 leads
+  ...generateLeads(
+    "IBN-2203",
+    "Boutique Homes",
+    "VIC",
+    "Facebook_Desktop_Feed_IBN-2203 Boutique Website Prospecting VIC",
+    41
+  ),
+];
+
 /**
  * Spread `leads` deals evenly from the contract's start date to today,
  * assigning `referrals` of them the 'referral' classification at evenly
@@ -184,4 +215,35 @@ function generateDeals(jobNumber, campaignId, leads, referrals) {
     });
   }
   return deals;
+}
+
+/**
+ * Spread `count` website-leads evenly from the contract start to today,
+ * each carrying the same utm_campaign string (placement-prefixed) so the
+ * suffix matcher pairs them with the right Meta campaign in mock mode.
+ */
+function generateLeads(jobNumber, builderName, state, utmCampaign, count) {
+  const out = [];
+  const startIso = CONTRACT_START_BY_JOB[jobNumber];
+  const start = startIso
+    ? new Date(startIso).getTime()
+    : Date.now() - 90 * 86400000; // 90d fallback
+  const end = Date.now();
+  const span = Math.max(1, end - start);
+
+  for (let i = 0; i < count; i += 1) {
+    const fraction = count === 1 ? 0.5 : i / (count - 1);
+    const t = start + Math.floor(fraction * span);
+    out.push({
+      createdDate: new Date(t).toISOString().slice(0, 10),
+      builderId: jobNumber,
+      builderName,
+      state,
+      campaignType: "website",
+      source: "facebook",
+      paid: "yes",
+      utmCampaign,
+    });
+  }
+  return out;
 }

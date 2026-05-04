@@ -11,6 +11,7 @@ import SourceBadges from "./SourceBadges";
 const NAV_TABS = [
   { href: "/", label: "Dashboard" },
   { href: "/meta-ads-comparison", label: "Lead Ads vs Website" },
+  { href: "/website-performance", label: "Website Performance" },
 ];
 
 export default function Layout({ children, sources }) {
