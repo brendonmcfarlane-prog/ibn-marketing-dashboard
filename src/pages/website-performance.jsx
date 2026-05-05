@@ -6,6 +6,7 @@ import { daysAgoIso, todayIso, formatNumber } from "@/lib/format";
 
 export default function WebsitePerformance() {
   const [range, setRange] = useState({ since: daysAgoIso(29), until: todayIso() });
+  const [showPostcodeMatch, setShowPostcodeMatch] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,19 +48,37 @@ export default function WebsitePerformance() {
         </div>
       )}
       <DateRangeBar range={range} onRangeChange={setRange} />
+      <MatchToggle value={showPostcodeMatch} onChange={setShowPostcodeMatch} />
       {loading && !data ? <LoadingSkeleton /> : data ? (
         <>
-          <WebsiteKpiStrip totals={data.totals} />
+          <WebsiteKpiStrip totals={data.totals} showPostcodeMatch={showPostcodeMatch} />
           {data.totals?.unmatchedLeads > 0 ? (
             <UnmatchedNote unmatched={data.totals.unmatchedLeads} considered={data.totals.leadsConsidered} />
           ) : null}
-          <WebsiteCampaignTable campaigns={data.campaigns || []} />
+          <WebsiteCampaignTable campaigns={data.campaigns || []} showPostcodeMatch={showPostcodeMatch} />
         </>
       ) : null}
       {loading && data && (
         <div className="fixed bottom-4 right-4 bg-ibn-navy text-white text-xs px-3 py-1.5 rounded-full shadow-card">Refreshing…</div>
       )}
     </Layout>
+  );
+}
+
+function MatchToggle({ value, onChange }) {
+  return (
+    <div className="flex items-center gap-2 mb-4 text-sm">
+      <input
+        type="checkbox"
+        id="postcode-match-toggle"
+        checked={value}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 rounded border-neutral-300 text-ibn-orange focus:ring-ibn-orange cursor-pointer"
+      />
+      <label htmlFor="postcode-match-toggle" className="text-ibn-navy cursor-pointer select-none">
+        Show post-code match — flags leads landing in any builder's service area (capped at 3 matches per lead).
+      </label>
+    </div>
   );
 }
 
