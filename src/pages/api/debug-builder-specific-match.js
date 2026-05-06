@@ -2,45 +2,81 @@ import { fetchLeads } from "@/lib/leadsSheet";
 import { readSheetRange, hasGoogleCredentials } from "@/lib/sheets";
 import { daysAgoIso, todayIso } from "@/lib/format";
 
-const QUALIFIERS_BUILDER_COL = 2;     // Column C in Builder Qualifiers
-const QUALIFIERS_POSTCODES_COL = 25;  // Column Z in Builder Qualifiers
+const QUALIFIERS_BUILDER_COL = 2;     // Column C
+const QUALIFIERS_POSTCODES_COL = 25;  // Column Z
+
+/**
+ * Aggressively normalises a builder name so format quirks don't break the join.
+ * Lower-cases, strips non-alphanumeric, collapses whitespace, removes invisible
+ * characters that sometimes hide in pasted spreadsheet cells.
+ */
+function normalise(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\u00a0/g, " ")    // non-breaking space
+    .replace(/[\u200b-\u200f\ufeff]/g, "") // zero-width chars + BOM
+    .replace(/[^a-z0-9 ]/g, " ") // strip punctuation/symbols
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Bidirectional contains: lead name is a substring of qualifier OR vice versa.
+ * Picks longest match on ties so "Simonds Homes" wins over "Homes" if both exist.
+ */
+function findBuilderEntry(leadName, qualifierEntries) {
+  const leadNorm = normalise(leadName);
+  if (!leadNorm) return null;
+  let best = null;
+  let bestLen = 0;
+  for (const entry of qualifierEntries) {
+    const qNorm = entry.norm;
+    if (!qNorm) continue;
+    let matchLen = 0;
+    if (qNorm === leadNorm) matchLen = qNorm.length;
+    else if (qNorm.includes(leadNorm)) matchLen = leadNorm.length;
+    else if (leadNorm.includes(qNorm)) matchLen = qNorm.length;
+    if (matchLen > bestLen) {
+      best = entry;
+      bestLen = matchLen;
+    }
+  }
+  return best;
+}
 
 export default async function handler(req, res) {
   try {
     const since = isValidDate(req.query.since) ? req.query.since : daysAgoIso(29);
     const until = isValidDate(req.query.until) ? req.query.until : todayIso();
 
-    if (!process.env.BUILDER_DETAILS_SHEET_ID) {
-      return res.status(200).json({ ok: false, reason: "BUILDER_DETAILS_SHEET_ID not set" });
-    }
-    if (!hasGoogleCredentials()) {
-      return res.status(200).json({ ok: false, reason: "no Google credentials" });
-    }
+    if (!process.env.BUILDER_DETAILS_SHEET_ID) return res.status(200).json({ ok: false, reason: "BUILDER_DETAILS_SHEET_ID not set" });
+    if (!hasGoogleCredentials()) return res.status(200).json({ ok: false, reason: "no Google credentials" });
 
     const range = process.env.BUILDER_DETAILS_SHEET_RANGE || "A1:AZ50000";
     let rows;
     try { rows = await readSheetRange(range, process.env.BUILDER_DETAILS_SHEET_ID); }
     catch (err) { return res.status(200).json({ ok: false, reason: "Qualifiers read failed", message: err.message }); }
 
-    // Build builderName → Set of postcodes. Multiple rows per builder are unioned.
-    const byBuilder = new Map();
-    const builderRowCounts = new Map();
+    // Build entries: one per row { displayName, norm, postcodes: Set }
+    // Aggregated: same normalised name across rows merges postcodes.
+    const entriesByNorm = new Map();
     for (let i = 1; i < rows.length; i += 1) {
       const r = rows[i] || [];
       const builderRaw = String(r[QUALIFIERS_BUILDER_COL] || "").trim();
-      const builder = builderRaw.toLowerCase();
+      const norm = normalise(builderRaw);
+      if (!norm) continue;
       const cell = String(r[QUALIFIERS_POSTCODES_COL] || "").trim();
-      if (!builder) continue;
-      builderRowCounts.set(builder, (builderRowCounts.get(builder) || 0) + 1);
-      if (!byBuilder.has(builder)) byBuilder.set(builder, { display: builderRaw, postcodes: new Set() });
-      const entry = byBuilder.get(builder);
+      if (!entriesByNorm.has(norm)) entriesByNorm.set(norm, { display: builderRaw, norm, postcodes: new Set() });
+      const entry = entriesByNorm.get(norm);
       for (const raw of cell.split(/[,;\/\s]+/)) {
         const p = raw.trim();
         if (!/^\d{3,4}$/.test(p)) continue;
         entry.postcodes.add(p.padStart(4, "0"));
       }
     }
+    const qualifierEntries = Array.from(entriesByNorm.values());
 
+    // Fetch leads (already filtered to paid social with utm_campaign)
     const { leads } = await fetchLeads({ since, until });
 
     const tally = {
@@ -54,61 +90,50 @@ export default async function handler(req, res) {
     const matchedSamples = [];
     const builderMissingSamples = [];
     const postcodeMissSamples = [];
-    const distinctLeadBuilders = new Map();
 
     for (const lead of leads) {
       const pc = String(lead.postCode || "").trim();
       if (!pc) continue;
-      const norm = pc.padStart(4, "0");
-      if (!/^\d{4}$/.test(norm)) continue;
+      const pcNorm = pc.padStart(4, "0");
+      if (!/^\d{4}$/.test(pcNorm)) continue;
       tally.withPostcode += 1;
 
-      const builderRaw = String(lead.builderName || "").trim();
-      const builderKey = builderRaw.toLowerCase();
-      distinctLeadBuilders.set(builderKey, (distinctLeadBuilders.get(builderKey) || 0) + 1);
-
-      const entry = byBuilder.get(builderKey);
+      const entry = findBuilderEntry(lead.builderName, qualifierEntries);
       if (!entry) {
         tally.builderNotInQualifiers += 1;
         if (builderMissingSamples.length < 15) {
-          builderMissingSamples.push({ leadBuilder: builderRaw, postcode: norm, campaign: lead.utmCampaign });
+          builderMissingSamples.push({ leadBuilder: lead.builderName, normalisedAs: normalise(lead.builderName), postcode: pcNorm, campaign: lead.utmCampaign });
         }
         continue;
       }
       tally.builderFoundInQualifiers += 1;
 
-      if (entry.postcodes.has(norm)) {
+      if (entry.postcodes.has(pcNorm)) {
         tally.postcodeInBuilderArea += 1;
         if (matchedSamples.length < 15) {
-          matchedSamples.push({ builder: entry.display, postcode: norm, campaign: lead.utmCampaign, builderPostcodeCount: entry.postcodes.size });
+          matchedSamples.push({ leadBuilder: lead.builderName, matchedQualifier: entry.display, postcode: pcNorm, campaign: lead.utmCampaign });
         }
       } else {
         tally.postcodeNotInBuilderArea += 1;
         if (postcodeMissSamples.length < 15) {
-          postcodeMissSamples.push({ builder: entry.display, postcode: norm, campaign: lead.utmCampaign, builderPostcodeCount: entry.postcodes.size });
+          postcodeMissSamples.push({ leadBuilder: lead.builderName, matchedQualifier: entry.display, postcode: pcNorm, builderPostcodeCount: entry.postcodes.size, campaign: lead.utmCampaign });
         }
       }
     }
 
-    // Top distinct builder names in leads, with whether they're recognised in qualifiers
-    const leadBuilderTable = Array.from(distinctLeadBuilders.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 30)
-      .map(([key, count]) => ({
-        leadBuilderName: key,
-        leadCount: count,
-        existsInQualifiers: byBuilder.has(key),
-      }));
+    // Diagnostic: first 10 RAW qualifier column C values (showing length so hidden chars stand out)
+    const qualifierColCSamples = [];
+    for (let i = 1; i < Math.min(rows.length, 11); i += 1) {
+      const raw = String((rows[i] || [])[QUALIFIERS_BUILDER_COL] || "");
+      qualifierColCSamples.push({ row: i + 1, raw, length: raw.length, normalised: normalise(raw) });
+    }
 
     res.status(200).json({
       ok: true,
       range: { since, until },
-      qualifiers: {
-        rowsRead: Math.max(0, rows.length - 1),
-        distinctBuilders: byBuilder.size,
-      },
+      qualifiers: { rowsRead: Math.max(0, rows.length - 1), distinctBuilders: entriesByNorm.size },
+      qualifierColCSamples,
       tally,
-      leadBuilderTable,
       matchedSamples,
       builderMissingSamples,
       postcodeMissSamples,
