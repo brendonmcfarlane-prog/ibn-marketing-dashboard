@@ -5,50 +5,25 @@ import { daysAgoIso, todayIso } from "@/lib/format";
 const QUALIFIERS_BUILDER_COL = 2;     // Column C
 const QUALIFIERS_POSTCODES_COL = 25;  // Column Z
 
-/**
- * Aggressively normalises a builder name so format quirks don't break the join.
- * Lower-cases, strips non-alphanumeric, collapses whitespace, removes invisible
- * characters that sometimes hide in pasted spreadsheet cells.
- */
-function normalise(s) {
-  return String(s || "")
-    .toLowerCase()
-    .replace(/\u00a0/g, " ")    // non-breaking space
-    .replace(/[\u200b-\u200f\ufeff]/g, "") // zero-width chars + BOM
-    .replace(/[^a-z0-9 ]/g, " ") // strip punctuation/symbols
-    .replace(/\s+/g, " ")
-    .trim();
-}
+const STATE_SUFFIX_REGEX = /\s*-\s*(vic|nsw|qld|sa|wa|tas|nt|act)\s*$/;
+const BRAND_PREFIX_REGEX = /^(hs|ibn|sg)_/;
 
-/**
- * Bidirectional contains: lead name is a substring of qualifier OR vice versa.
- * Picks longest match on ties so "Simonds Homes" wins over "Homes" if both exist.
- */
-function findBuilderEntry(leadName, qualifierEntries) {
-  const leadNorm = normalise(leadName);
-  if (!leadNorm) return null;
-  let best = null;
-  let bestLen = 0;
-  for (const entry of qualifierEntries) {
-    const qNorm = entry.norm;
-    if (!qNorm) continue;
-    let matchLen = 0;
-    if (qNorm === leadNorm) matchLen = qNorm.length;
-    else if (qNorm.includes(leadNorm)) matchLen = leadNorm.length;
-    else if (leadNorm.includes(qNorm)) matchLen = qNorm.length;
-    if (matchLen > bestLen) {
-      best = entry;
-      bestLen = matchLen;
-    }
-  }
-  return best;
+function normaliseBuilder(s) {
+  let v = String(s || "")
+    .toLowerCase()
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u200b-\u200f\ufeff]/g, "")
+    .trim();
+  v = v.replace(BRAND_PREFIX_REGEX, "");
+  v = v.replace(STATE_SUFFIX_REGEX, "");
+  v = v.replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  return v;
 }
 
 export default async function handler(req, res) {
   try {
     const since = isValidDate(req.query.since) ? req.query.since : daysAgoIso(29);
     const until = isValidDate(req.query.until) ? req.query.until : todayIso();
-
     if (!process.env.BUILDER_DETAILS_SHEET_ID) return res.status(200).json({ ok: false, reason: "BUILDER_DETAILS_SHEET_ID not set" });
     if (!hasGoogleCredentials()) return res.status(200).json({ ok: false, reason: "no Google credentials" });
 
@@ -57,39 +32,45 @@ export default async function handler(req, res) {
     try { rows = await readSheetRange(range, process.env.BUILDER_DETAILS_SHEET_ID); }
     catch (err) { return res.status(200).json({ ok: false, reason: "Qualifiers read failed", message: err.message }); }
 
-    // Build entries: one per row { displayName, norm, postcodes: Set }
-    // Aggregated: same normalised name across rows merges postcodes.
-    const entriesByNorm = new Map();
+    // Merge rows by normalised base builder name (strip brand prefix + state suffix).
+    const byBase = new Map();
     for (let i = 1; i < rows.length; i += 1) {
       const r = rows[i] || [];
       const builderRaw = String(r[QUALIFIERS_BUILDER_COL] || "").trim();
-      const norm = normalise(builderRaw);
+      const norm = normaliseBuilder(builderRaw);
       if (!norm) continue;
       const cell = String(r[QUALIFIERS_POSTCODES_COL] || "").trim();
-      if (!entriesByNorm.has(norm)) entriesByNorm.set(norm, { display: builderRaw, norm, postcodes: new Set() });
-      const entry = entriesByNorm.get(norm);
+      if (!byBase.has(norm)) byBase.set(norm, { norm, displays: [], postcodes: new Set(), rowCount: 0 });
+      const entry = byBase.get(norm);
+      entry.displays.push(builderRaw);
+      entry.rowCount += 1;
       for (const raw of cell.split(/[,;\/\s]+/)) {
         const p = raw.trim();
         if (!/^\d{3,4}$/.test(p)) continue;
         entry.postcodes.add(p.padStart(4, "0"));
       }
     }
-    const qualifierEntries = Array.from(entriesByNorm.values());
+    const entries = Array.from(byBase.values());
 
-    // Fetch leads (already filtered to paid social with utm_campaign)
+    function findEntry(leadBuilderName) {
+      const leadNorm = normaliseBuilder(leadBuilderName);
+      if (!leadNorm) return null;
+      if (byBase.has(leadNorm)) return byBase.get(leadNorm);
+      // Contains fallback for any builder that doesn't fit the strip pattern.
+      let best = null; let bestLen = 0;
+      for (const e of entries) {
+        let l = 0;
+        if (e.norm === leadNorm) l = e.norm.length;
+        else if (e.norm.includes(leadNorm)) l = leadNorm.length;
+        else if (leadNorm.includes(e.norm)) l = e.norm.length;
+        if (l > bestLen) { best = e; bestLen = l; }
+      }
+      return best;
+    }
+
     const { leads } = await fetchLeads({ since, until });
-
-    const tally = {
-      totalLeadsConsidered: leads.length,
-      withPostcode: 0,
-      builderFoundInQualifiers: 0,
-      builderNotInQualifiers: 0,
-      postcodeInBuilderArea: 0,
-      postcodeNotInBuilderArea: 0,
-    };
-    const matchedSamples = [];
-    const builderMissingSamples = [];
-    const postcodeMissSamples = [];
+    const tally = { totalLeadsConsidered: leads.length, withPostcode: 0, builderFound: 0, builderNotFound: 0, postcodeInBuilderArea: 0, postcodeNotInBuilderArea: 0 };
+    const matchedSamples = []; const builderMissingSamples = []; const postcodeMissSamples = [];
 
     for (const lead of leads) {
       const pc = String(lead.postCode || "").trim();
@@ -98,41 +79,26 @@ export default async function handler(req, res) {
       if (!/^\d{4}$/.test(pcNorm)) continue;
       tally.withPostcode += 1;
 
-      const entry = findBuilderEntry(lead.builderName, qualifierEntries);
+      const entry = findEntry(lead.builderName);
       if (!entry) {
-        tally.builderNotInQualifiers += 1;
-        if (builderMissingSamples.length < 15) {
-          builderMissingSamples.push({ leadBuilder: lead.builderName, normalisedAs: normalise(lead.builderName), postcode: pcNorm, campaign: lead.utmCampaign });
-        }
+        tally.builderNotFound += 1;
+        if (builderMissingSamples.length < 15) builderMissingSamples.push({ leadBuilder: lead.builderName, postcode: pcNorm, campaign: lead.utmCampaign });
         continue;
       }
-      tally.builderFoundInQualifiers += 1;
-
+      tally.builderFound += 1;
       if (entry.postcodes.has(pcNorm)) {
         tally.postcodeInBuilderArea += 1;
-        if (matchedSamples.length < 15) {
-          matchedSamples.push({ leadBuilder: lead.builderName, matchedQualifier: entry.display, postcode: pcNorm, campaign: lead.utmCampaign });
-        }
+        if (matchedSamples.length < 15) matchedSamples.push({ leadBuilder: lead.builderName, mergedFrom: entry.displays, postcode: pcNorm, campaign: lead.utmCampaign });
       } else {
         tally.postcodeNotInBuilderArea += 1;
-        if (postcodeMissSamples.length < 15) {
-          postcodeMissSamples.push({ leadBuilder: lead.builderName, matchedQualifier: entry.display, postcode: pcNorm, builderPostcodeCount: entry.postcodes.size, campaign: lead.utmCampaign });
-        }
+        if (postcodeMissSamples.length < 15) postcodeMissSamples.push({ leadBuilder: lead.builderName, mergedFrom: entry.displays, postcode: pcNorm, builderPostcodeCount: entry.postcodes.size, campaign: lead.utmCampaign });
       }
-    }
-
-    // Diagnostic: first 10 RAW qualifier column C values (showing length so hidden chars stand out)
-    const qualifierColCSamples = [];
-    for (let i = 1; i < Math.min(rows.length, 11); i += 1) {
-      const raw = String((rows[i] || [])[QUALIFIERS_BUILDER_COL] || "");
-      qualifierColCSamples.push({ row: i + 1, raw, length: raw.length, normalised: normalise(raw) });
     }
 
     res.status(200).json({
       ok: true,
       range: { since, until },
-      qualifiers: { rowsRead: Math.max(0, rows.length - 1), distinctBuilders: entriesByNorm.size },
-      qualifierColCSamples,
+      qualifiers: { rowsRead: Math.max(0, rows.length - 1), distinctMergedBuilders: byBase.size, sampleMerges: entries.filter((e) => e.rowCount > 1).slice(0, 10).map((e) => ({ baseName: e.norm, rowCount: e.rowCount, mergedFrom: e.displays, totalPostcodes: e.postcodes.size })) },
       tally,
       matchedSamples,
       builderMissingSamples,
