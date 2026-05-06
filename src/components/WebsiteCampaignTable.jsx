@@ -31,6 +31,7 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
               <th className="px-4 py-2.5 font-semibold text-right">Leads</th>
               {showPostcodeMatch && (
                 <>
+                  <th className="px-4 py-2.5 font-semibold text-right">Unique</th>
                   <th className="px-4 py-2.5 font-semibold text-right">Matched</th>
                   <th className="px-4 py-2.5 font-semibold text-right">Match %</th>
                 </>
@@ -49,6 +50,7 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
                 <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(c.leads)}</td>
                 {showPostcodeMatch && (
                   <>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(c.matchedAny || 0)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(c.matched || 0)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
                       {c.matchRate === null || c.matchRate === undefined ? "—" : formatPercent(c.matchRate, { decimals: 1 })}
