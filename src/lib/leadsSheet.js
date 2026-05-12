@@ -12,6 +12,7 @@ const COL = {
   POSTCODE: 22,
   TRAFFIC_CHANNEL: 23,
   SOURCE: 24,
+  MEDIUM: 25,
   PAID: 26,
   CAMPAIGN: 27,
 };
@@ -45,7 +46,7 @@ export async function fetchLeads({ since, until } = {}) {
 
   if (!_leadsLoggedOnce) {
     _leadsLoggedOnce = true;
-    console.log("[leads] read %d rows from leads sheet (range=%s)", rows.length, range);
+    console.log("[leads] read %d rows (range=%s)", rows.length, range);
   }
   if (rows.length < 2) return { source: "live", leads: [] };
 
@@ -59,16 +60,12 @@ export async function fetchLeads({ since, until } = {}) {
     const createdDate = normaliseDate(r[COL.CREATED_DATE]);
     if (!createdDate) continue;
     if (!withinRange(createdDate, since, until)) continue;
-
     const utmCampaign = String(r[COL.CAMPAIGN] || "").trim();
     if (!utmCampaign) continue;
-
     const sourceVal = String(r[COL.SOURCE] || "").trim().toLowerCase();
     if (sourceValues.length > 0 && !sourceValues.includes(sourceVal)) continue;
-
     const paidVal = String(r[COL.PAID] || "").trim().toLowerCase();
     if (paidValues.length > 0 && !paidValues.includes(paidVal)) continue;
-
     const campaignTypeVal = String(r[COL.CAMPAIGN_TYPE] || "").trim().toLowerCase();
     if (campaignTypeValues.length > 0 && !campaignTypeValues.includes(campaignTypeVal)) continue;
 
@@ -79,6 +76,7 @@ export async function fetchLeads({ since, until } = {}) {
       state: String(r[COL.STATE] || "").trim(),
       campaignType: campaignTypeVal,
       source: sourceVal,
+      medium: String(r[COL.MEDIUM] || "").trim().toLowerCase(),
       paid: paidVal,
       postCode: String(r[COL.POSTCODE] || "").trim(),
       utmCampaign,

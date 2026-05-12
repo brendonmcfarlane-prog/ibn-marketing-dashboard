@@ -7,13 +7,10 @@ export default function WebsiteKpiStrip({ totals, showPostcodeMatch = false }) {
     { label: "Spend", value: formatCurrency(totals.spend) },
     { label: "Clicks", value: formatNumber(totals.clicks) },
     { label: "Leads", value: formatNumber(totals.leads) },
-    {
-      label: "Cost / Lead",
-      value: totals.costPerLead === null || totals.costPerLead === undefined ? "—" : formatCurrency(totals.costPerLead),
-    },
+    { label: "Cost / Lead", value: totals.costPerLead == null ? "—" : formatCurrency(totals.costPerLead) },
     {
       label: "Conversion Rate",
-      value: totals.conversionRate === null || totals.conversionRate === undefined ? "—" : formatPercent(totals.conversionRate, { decimals: 2 }),
+      value: totals.conversionRate == null ? "—" : formatPercent(totals.conversionRate, { decimals: 2 }),
       sub: "Leads ÷ Clicks",
       accent: true,
     },
@@ -21,15 +18,19 @@ export default function WebsiteKpiStrip({ totals, showPostcodeMatch = false }) {
 
   if (showPostcodeMatch) {
     cards.push({
-      label: "Referral Matched",
-      value: formatNumber(totals.matched || 0),
-      sub: totals.matchRate === null || totals.matchRate === undefined
-        ? "no match data"
-        : `${formatPercent(totals.matchRate, { decimals: 1 })} of leads in service area`,
+      label: "Any-Builder Match",
+      value: formatNumber(totals.matchedAny || 0),
+      sub: totals.matchRate == null ? "no match data" : `${formatPercent(totals.matchRate, { decimals: 1 })} of leads`,
+    });
+    cards.push({
+      label: "Builder Match",
+      value: formatNumber(totals.matchedStrict || 0),
+      sub: totals.matchRateStrict == null ? "no match data" : `${formatPercent(totals.matchRateStrict, { decimals: 1 })} in their builder's area`,
     });
   }
 
-  const cols = showPostcodeMatch ? "lg:grid-cols-6" : "lg:grid-cols-5";
+  const colMap = { 5: "lg:grid-cols-5", 7: "lg:grid-cols-7" };
+  const cols = colMap[cards.length] || "lg:grid-cols-5";
 
   return (
     <section className={`grid grid-cols-2 sm:grid-cols-3 ${cols} gap-3 mb-6`}>
