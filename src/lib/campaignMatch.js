@@ -1,18 +1,17 @@
 /**
- * Match a utm_campaign value back to a Meta campaign.
+ * Match a utm_campaign value back to a Meta or Google campaign.
  *
  * Strategy (two-stage, falls through):
- *   1. Suffix match on the full campaign name. Works when the leads
- *      sheet's UTM was captured AFTER the campaign got its current name.
- *   2. Job-number match. Falls back when the campaign was renamed in Meta
- *      since the lead was captured (e.g., "- Website" suffix added later).
- *      The UTM is frozen at click-time, but the spend sheet shows current
- *      names — so suffix-match fails. Job numbers are stable across
- *      renames so they're a more reliable join key in practice.
+ *   1. Bidirectional substring match — longest wins. Handles both Meta's
+ *      `{{placement}}_{{campaign.name}}` (campaign as suffix) and Google's
+ *      `{{campaign.name}}_{{placement}}` (campaign as prefix), plus any
+ *      case where the campaign name appears anywhere in the UTM.
+ *   2. Job-number fallback. Falls back when the campaign was renamed in
+ *      the ad platform since the lead was captured. Job numbers are stable
+ *      across renames.
  *
- * The job-number regex is the same one in meta.js (extractJobNumberFromName)
- * — anchored to find HS524, SG09800, IBN-2145, plus optional bracket
- * suffixes like [1] / [LA] / [G][C].
+ * Caller must pre-filter campaigns to the lead's channel — channel mixing
+ * is handled in /api/website-performance, not here.
  */
 
 const JOB_NUMBER_REGEX = /([A-Z]{2,4}[-_]?\d{2,6}(?:\s*\[[^\]]+\])*)/i;
@@ -33,13 +32,13 @@ export function matchLeadToCampaign(utmValue, campaigns) {
   const haystack = normalise(utmValue);
   if (!haystack) return null;
 
-  // Stage 1 — full-name suffix match (longest wins on ties).
+  // Stage 1 — substring match (longest wins on ties).
   let best = null;
   let bestLen = 0;
   for (const c of campaigns) {
     const needle = normalise(c.campaignName);
     if (!needle) continue;
-    if (haystack === needle || haystack.endsWith(needle)) {
+    if (haystack === needle || haystack.includes(needle)) {
       if (needle.length > bestLen) {
         best = c;
         bestLen = needle.length;
@@ -48,7 +47,7 @@ export function matchLeadToCampaign(utmValue, campaigns) {
   }
   if (best) return best;
 
-  // Stage 2 — job-number fallback. Robust to campaign renames.
+  // Stage 2 — job-number fallback.
   const utmJob = extractJob(utmValue);
   if (!utmJob) return null;
   for (const c of campaigns) {
