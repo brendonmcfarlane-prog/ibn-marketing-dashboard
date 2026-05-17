@@ -41,8 +41,6 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
                 </>
               )}
               <th className="px-4 py-2.5 font-semibold text-right">Cost / Lead</th>
-              <th className="px-4 py-2.5 font-semibold text-right">Current RPL</th>
-              <th className="px-4 py-2.5 font-semibold text-right">Future RPL</th>
               {showPostcodeMatch && (
                 <>
                   <th className="px-4 py-2.5 font-semibold text-right">Rev @ Current</th>
@@ -70,8 +68,6 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
                   </>
                 )}
                 <td className="px-4 py-2.5 text-right tabular-nums">{num(c.costPerLead, formatCurrency)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{num(c.currentRpl, formatCurrency)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{num(c.futureRpl, formatCurrency)}</td>
                 {showPostcodeMatch && (
                   <>
                     <td className="px-4 py-2.5 text-right tabular-nums">{num(c.revenueAtCurrentRpl, formatCurrency)}</td>
