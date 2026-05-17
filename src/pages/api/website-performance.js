@@ -1,4 +1,4 @@
-import { fetchMetaCampaigns } from "@/lib/meta";
+import { fetchMetaCampaignsFromSupabase } from "@/lib/metaSupabase";
 import { fetchGoogleCampaignsFromSupabase } from "@/lib/googleSupabase";
 import { fetchLeads } from "@/lib/leadsSheet";
 import { matchLeadToCampaign } from "@/lib/campaignMatch";
@@ -15,15 +15,13 @@ export default async function handler(req, res) {
     const until = isValidDate(req.query.until) ? req.query.until : todayIso();
 
     const [metaResult, googleResult, leadsResult, postcodesResult, rplResult] = await Promise.all([
-      fetchMetaCampaigns({ since, until }),
+      fetchMetaCampaignsFromSupabase({ since, until }),
       fetchGoogleCampaignsFromSupabase({ since, until }).catch((e) => { console.error("[google-supabase]", e.message); return { source: "error", campaigns: [] }; }),
       fetchLeads({ since, until }),
       fetchBuilderPostcodeMap().catch((e) => { console.error("[builder-postcodes]", e.message); return { source: "error", postcodeMap: new Map(), perBuilderMap: new Map() }; }),
       fetchCurrentRevenuePerLead().catch((e) => { console.error("[performance-tracking]", e.message); return { source: "error", rplMap: new Map() }; }),
     ]);
 
-    // Meta side: filter to Website ad type. Google side: all campaigns drive
-    // website traffic so no adType filter.
     const metaCampaigns = metaResult.campaigns
       .filter((c) => c.adType === AD_TYPE_WEBSITE)
       .map((c) => ({ ...c, channel: "meta" }));
@@ -34,9 +32,6 @@ export default async function handler(req, res) {
     const perBuilderMap = postcodesResult.perBuilderMap || new Map();
     const rplMap = rplResult.rplMap || new Map();
 
-    // Channel-aware lead matching: Meta leads only match Meta campaigns;
-    // Google leads only match Google campaigns. Prevents cross-channel
-    // false-positives from generic campaign names.
     const leadCounts = new Map();
     const matchedSums = new Map();
     const matchedAny = new Map();

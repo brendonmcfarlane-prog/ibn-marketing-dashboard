@@ -1,20 +1,4 @@
-/**
- * GET /api/meta-comparison?since=YYYY-MM-DD&until=YYYY-MM-DD
- *
- * Top-of-funnel comparison between Meta Lead Ads and Meta Website
- * campaigns. Three KPIs per group:
- *   - Spend
- *   - Leads (sum of Meta sheet col AJ within the group)
- *   - Cost Per Lead (Spend / Leads)
- *
- * Bottom-of-funnel metrics (Referrals, Revenue, ROMS) are intentionally
- * NOT included on this view because referrals attribute to a job, not
- * a campaign — see project memory for the reasoning.
- *
- * Dates default to the trailing 30 days (inclusive of today).
- */
-
-import { fetchMetaCampaigns } from "@/lib/meta";
+import { fetchMetaCampaignsFromSupabase } from "@/lib/metaSupabase";
 import { classifyAdType, AD_TYPE_LEAD_ADS, AD_TYPE_WEBSITE } from "@/lib/adType";
 import { daysAgoIso, todayIso, safeDivide } from "@/lib/format";
 
@@ -23,21 +7,15 @@ export default async function handler(req, res) {
     const since = isValidDate(req.query.since) ? req.query.since : daysAgoIso(29);
     const until = isValidDate(req.query.until) ? req.query.until : todayIso();
 
-    const meta = await fetchMetaCampaigns({ since, until });
+    const meta = await fetchMetaCampaignsFromSupabase({ since, until });
 
-    // Defensive — meta.js tags adType, but if a campaign somehow slipped
-    // through without one (mock-data drift, bad data shape) classify here.
     const campaigns = meta.campaigns.map((c) => ({
       ...c,
       adType: c.adType || classifyAdType(c.campaignName),
     }));
 
-    const leadAds = aggregateGroup(
-      campaigns.filter((c) => c.adType === AD_TYPE_LEAD_ADS)
-    );
-    const website = aggregateGroup(
-      campaigns.filter((c) => c.adType === AD_TYPE_WEBSITE)
-    );
+    const leadAds = aggregateGroup(campaigns.filter((c) => c.adType === AD_TYPE_LEAD_ADS));
+    const website = aggregateGroup(campaigns.filter((c) => c.adType === AD_TYPE_WEBSITE));
     const all = aggregateGroup(campaigns);
 
     res.status(200).json({
