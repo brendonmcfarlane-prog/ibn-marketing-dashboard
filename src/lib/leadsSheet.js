@@ -10,16 +10,12 @@ const COL = {
   STATE: 3,
   CAMPAIGN_TYPE: 10,
   POSTCODE: 22,
-  TRAFFIC_CHANNEL: 23,
-  SOURCE: 24,
-  MEDIUM: 25,
+  TRAFFIC_CHANNEL: 23,  // Column X
+  SOURCE: 24,           // Column Y
+  MEDIUM: 25,           // Column Z
   PAID: 26,
   CAMPAIGN: 27,
 };
-
-const DEFAULT_PAID_VALUES = ["yes", "y", "true", "1", "paid"];
-const DEFAULT_SOURCE_VALUES = ["facebook", "meta", "fb", "instagram", "ig"];
-const DEFAULT_CAMPAIGN_TYPE_VALUES = [];
 
 let _leadsLoggedOnce = false;
 
@@ -29,15 +25,30 @@ function shouldUseLeadsMock() {
   return !hasGoogleCredentials();
 }
 
-function envValues(envVar, defaults) {
-  const raw = process.env[envVar];
-  if (!raw) return defaults;
-  return String(raw).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+/**
+ * Channel classification per Brendon's spec (2026-05-17):
+ *
+ *   Meta Ads paid:    Traffic Channel = "Paid Social",  Source ∈ {fb, ig},  Medium = "paid"
+ *   Google Ads paid:  Traffic Channel = "Paid Search",  Source = "google",  Medium ∈ {paid, cpc}
+ *
+ * Case-insensitive on trimmed cell values. Leads not matching either rule
+ * are dropped — they're organic / direct / email / etc., not paid leads
+ * we'd attribute to a campaign.
+ */
+export function classifyLeadChannel(trafficChannel, source, medium) {
+  const tc = String(trafficChannel || "").trim().toLowerCase();
+  const sv = String(source || "").trim().toLowerCase();
+  const mv = String(medium || "").trim().toLowerCase();
+  if (tc === "paid social" && (sv === "fb" || sv === "ig") && mv === "paid") return "meta";
+  if (tc === "paid search" && sv === "google" && (mv === "paid" || mv === "cpc")) return "google";
+  return null;
 }
 
 export async function fetchLeads({ since, until } = {}) {
   if (shouldUseLeadsMock()) {
-    const filtered = MOCK_LEADS.filter((l) => withinRange(l.createdDate, since, until));
+    const filtered = MOCK_LEADS
+      .filter((l) => withinRange(l.createdDate, since, until))
+      .map((l) => ({ ...l, channel: l.channel || "meta" }));
     return { source: "mock", leads: filtered };
   }
 
@@ -50,10 +61,6 @@ export async function fetchLeads({ since, until } = {}) {
   }
   if (rows.length < 2) return { source: "live", leads: [] };
 
-  const paidValues = envValues("LEADS_SHEET_PAID_VALUES", DEFAULT_PAID_VALUES);
-  const sourceValues = envValues("LEADS_SHEET_SOURCE_VALUES", DEFAULT_SOURCE_VALUES);
-  const campaignTypeValues = envValues("LEADS_SHEET_CAMPAIGN_TYPE_VALUES", DEFAULT_CAMPAIGN_TYPE_VALUES);
-
   const leads = [];
   for (let i = 1; i < rows.length; i += 1) {
     const r = rows[i] || [];
@@ -62,24 +69,26 @@ export async function fetchLeads({ since, until } = {}) {
     if (!withinRange(createdDate, since, until)) continue;
     const utmCampaign = String(r[COL.CAMPAIGN] || "").trim();
     if (!utmCampaign) continue;
-    const sourceVal = String(r[COL.SOURCE] || "").trim().toLowerCase();
-    if (sourceValues.length > 0 && !sourceValues.includes(sourceVal)) continue;
-    const paidVal = String(r[COL.PAID] || "").trim().toLowerCase();
-    if (paidValues.length > 0 && !paidValues.includes(paidVal)) continue;
-    const campaignTypeVal = String(r[COL.CAMPAIGN_TYPE] || "").trim().toLowerCase();
-    if (campaignTypeValues.length > 0 && !campaignTypeValues.includes(campaignTypeVal)) continue;
+
+    const trafficChannel = String(r[COL.TRAFFIC_CHANNEL] || "").trim();
+    const source = String(r[COL.SOURCE] || "").trim();
+    const medium = String(r[COL.MEDIUM] || "").trim();
+    const channel = classifyLeadChannel(trafficChannel, source, medium);
+    if (!channel) continue;
 
     leads.push({
       createdDate,
       builderId: String(r[COL.BUILDER_ID] || "").trim(),
       builderName: String(r[COL.BUILDER_NAME] || "").trim(),
       state: String(r[COL.STATE] || "").trim(),
-      campaignType: campaignTypeVal,
-      source: sourceVal,
-      medium: String(r[COL.MEDIUM] || "").trim().toLowerCase(),
-      paid: paidVal,
+      campaignType: String(r[COL.CAMPAIGN_TYPE] || "").trim().toLowerCase(),
+      trafficChannel: trafficChannel.toLowerCase(),
+      source: source.toLowerCase(),
+      medium: medium.toLowerCase(),
+      paid: String(r[COL.PAID] || "").trim().toLowerCase(),
       postCode: String(r[COL.POSTCODE] || "").trim(),
       utmCampaign,
+      channel,
     });
   }
   return { source: "live", leads };
@@ -89,9 +98,9 @@ function normaliseDate(v) {
   if (v === null || v === undefined || v === "") return null;
   const s = String(v).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const auMatch = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if (auMatch) {
-    const [, dd, mm, yy] = auMatch;
+  const au = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (au) {
+    const [, dd, mm, yy] = au;
     const year = yy.length === 2 ? `20${yy}` : yy;
     return `${year}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
   }
