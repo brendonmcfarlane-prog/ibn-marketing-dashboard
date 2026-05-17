@@ -4,22 +4,15 @@ function ChannelChip({ channel }) {
   const isGoogle = channel === "google";
   const cls = isGoogle ? "bg-ibn-blue/10 text-ibn-blue" : "bg-ibn-orange/10 text-ibn-orange";
   const label = isGoogle ? "Google Ads" : "Meta Ads";
-  return (
-    <span className={`inline-block text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${cls}`}>
-      {label}
-    </span>
-  );
+  return <span className={`inline-block text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
 }
+
+function num(v, fn) { return v == null ? "—" : fn(v); }
 
 export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = false }) {
   if (!campaigns || campaigns.length === 0) {
-    return (
-      <section className="bg-white rounded-card shadow-card p-5 text-sm text-neutral-500">
-        No Website-classified campaigns in the selected date range.
-      </section>
-    );
+    return <section className="bg-white rounded-card shadow-card p-5 text-sm text-neutral-500">No Website-classified campaigns in the selected date range.</section>;
   }
-
   const sorted = [...campaigns].sort((a, b) => (b.spend || 0) - (a.spend || 0));
   const totalSpend = sorted.reduce((s, c) => s + (c.spend || 0), 0);
 
@@ -27,9 +20,7 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
     <section className="bg-white rounded-card shadow-card overflow-hidden">
       <header className="px-4 sm:px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-ibn-navy">Campaign breakdown</h2>
-        <span className="text-xs text-neutral-500">
-          {sorted.length} {sorted.length === 1 ? "campaign" : "campaigns"} · {formatCurrency(totalSpend)} total
-        </span>
+        <span className="text-xs text-neutral-500">{sorted.length} {sorted.length === 1 ? "campaign" : "campaigns"} · {formatCurrency(totalSpend)} total</span>
       </header>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
@@ -46,9 +37,18 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
                   <th className="px-4 py-2.5 font-semibold text-right">Unique</th>
                   <th className="px-4 py-2.5 font-semibold text-right">Matched</th>
                   <th className="px-4 py-2.5 font-semibold text-right">Match %</th>
+                  <th className="px-4 py-2.5 font-semibold text-right">Cost / Matched</th>
                 </>
               )}
               <th className="px-4 py-2.5 font-semibold text-right">Cost / Lead</th>
+              <th className="px-4 py-2.5 font-semibold text-right">Current RPL</th>
+              <th className="px-4 py-2.5 font-semibold text-right">Future RPL</th>
+              {showPostcodeMatch && (
+                <>
+                  <th className="px-4 py-2.5 font-semibold text-right">Rev @ Current</th>
+                  <th className="px-4 py-2.5 font-semibold text-right">Rev @ Future</th>
+                </>
+              )}
               <th className="px-4 py-2.5 font-semibold text-right">Conv. Rate</th>
             </tr>
           </thead>
@@ -65,17 +65,20 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
                   <>
                     <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(c.matchedAny || 0)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(c.matchedStrict || 0)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
-                      {c.matchRateStrict === null || c.matchRateStrict === undefined ? "—" : formatPercent(c.matchRateStrict, { decimals: 1 })}
-                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{num(c.matchRateStrict, (v) => formatPercent(v, { decimals: 1 }))}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{num(c.costPerLeadReferred, formatCurrency)}</td>
                   </>
                 )}
-                <td className="px-4 py-2.5 text-right tabular-nums">
-                  {c.costPerLead === null || c.costPerLead === undefined ? "—" : formatCurrency(c.costPerLead)}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums">
-                  {c.conversionRate === null || c.conversionRate === undefined ? "—" : formatPercent(c.conversionRate, { decimals: 2 })}
-                </td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{num(c.costPerLead, formatCurrency)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{num(c.currentRpl, formatCurrency)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{num(c.futureRpl, formatCurrency)}</td>
+                {showPostcodeMatch && (
+                  <>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{num(c.revenueAtCurrentRpl, formatCurrency)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{num(c.revenueAtFutureRpl, formatCurrency)}</td>
+                  </>
+                )}
+                <td className="px-4 py-2.5 text-right tabular-nums">{num(c.conversionRate, (v) => formatPercent(v, { decimals: 2 }))}</td>
               </tr>
             ))}
           </tbody>
