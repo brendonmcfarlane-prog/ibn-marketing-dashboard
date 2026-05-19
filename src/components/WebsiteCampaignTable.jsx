@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 
 function ChannelChip({ channel }) {
@@ -9,11 +10,44 @@ function ChannelChip({ channel }) {
 
 function num(v, fn) { return v == null ? "—" : fn(v); }
 
+function SortHeader({ label, sortKey, currentKey, currentDir, onSort, align = "left" }) {
+  const isActive = currentKey === sortKey;
+  const arrow = isActive ? (currentDir === "asc" ? "↑" : "↓") : "";
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      className={`px-4 py-2.5 font-semibold cursor-pointer select-none hover:text-ibn-orange transition-colors ${align === "right" ? "text-right" : "text-left"} ${isActive ? "text-ibn-orange" : ""}`}
+    >
+      {label} <span className="inline-block min-w-[10px]">{arrow}</span>
+    </th>
+  );
+}
+
 export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = false }) {
+  const [sortKey, setSortKey] = useState("spend");
+  const [sortDir, setSortDir] = useState("desc");
+
   if (!campaigns || campaigns.length === 0) {
     return <section className="bg-white rounded-card shadow-card p-5 text-sm text-neutral-500">No Website-classified campaigns in the selected date range.</section>;
   }
-  const sorted = [...campaigns].sort((a, b) => (b.spend || 0) - (a.spend || 0));
+
+  function handleSort(key) {
+    if (key === sortKey) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
+  }
+
+  function sortFn(a, b) {
+    const av = a[sortKey]; const bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === "string" && typeof bv === "string") {
+      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    }
+    return sortDir === "asc" ? (av - bv) : (bv - av);
+  }
+
+  const sorted = [...campaigns].sort(sortFn);
   const totalSpend = sorted.reduce((s, c) => s + (c.spend || 0), 0);
 
   return (
@@ -25,29 +59,31 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="text-left text-[11px] uppercase tracking-wide text-neutral-500 bg-neutral-50">
-              <th className="px-4 py-2.5 font-semibold">Campaign</th>
-              <th className="px-4 py-2.5 font-semibold">Channel</th>
-              <th className="px-4 py-2.5 font-semibold">Job #</th>
-              <th className="px-4 py-2.5 font-semibold text-right">Spend</th>
-              <th className="px-4 py-2.5 font-semibold text-right">Clicks</th>
-              <th className="px-4 py-2.5 font-semibold text-right">Leads</th>
+            <tr className="text-[11px] uppercase tracking-wide text-neutral-500 bg-neutral-50">
+              <SortHeader label="Campaign" sortKey="campaignName" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Channel" sortKey="channel" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Job #" sortKey="jobNumber" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Spend" sortKey="spend" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <SortHeader label="Clicks" sortKey="clicks" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <SortHeader label="Leads" sortKey="leads" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
               {showPostcodeMatch && (
                 <>
-                  <th className="px-4 py-2.5 font-semibold text-right">Unique</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">Matched</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">Match %</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">Cost / Matched</th>
+                  <SortHeader label="Unique" sortKey="matchedAny" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+                  <SortHeader label="Matched" sortKey="matchedStrict" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+                  <SortHeader label="Match %" sortKey="matchRateStrict" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+                  <SortHeader label="Cost / Matched" sortKey="costPerLeadReferred" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
                 </>
               )}
-              <th className="px-4 py-2.5 font-semibold text-right">Cost / Lead</th>
+              <SortHeader label="Cost / Lead" sortKey="costPerLead" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <SortHeader label="Total Leads" sortKey="totalLeads" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+              <SortHeader label="Total CPL" sortKey="totalCostPerLead" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
               {showPostcodeMatch && (
                 <>
-                  <th className="px-4 py-2.5 font-semibold text-right">Rev @ Current</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">Rev @ Future</th>
+                  <SortHeader label="Rev @ Current" sortKey="revenueAtCurrentRpl" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
+                  <SortHeader label="Rev @ Future" sortKey="revenueAtFutureRpl" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
                 </>
               )}
-              <th className="px-4 py-2.5 font-semibold text-right">Conv. Rate</th>
+              <SortHeader label="Conv. Rate" sortKey="conversionRate" currentKey={sortKey} currentDir={sortDir} onSort={handleSort} align="right" />
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
@@ -68,6 +104,8 @@ export default function WebsiteCampaignTable({ campaigns, showPostcodeMatch = fa
                   </>
                 )}
                 <td className="px-4 py-2.5 text-right tabular-nums">{num(c.costPerLead, formatCurrency)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(c.totalLeads || 0)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{num(c.totalCostPerLead, formatCurrency)}</td>
                 {showPostcodeMatch && (
                   <>
                     <td className="px-4 py-2.5 text-right tabular-nums">{num(c.revenueAtCurrentRpl, formatCurrency)}</td>
