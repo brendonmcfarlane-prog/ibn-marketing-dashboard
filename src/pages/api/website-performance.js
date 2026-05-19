@@ -32,6 +32,30 @@ export default async function handler(req, res) {
     const perBuilderMap = postcodesResult.perBuilderMap || new Map();
     const rplMap = rplResult.rplMap || new Map();
 
+    // PASS 1 — Total Leads per builder (any traffic channel, must have postcode).
+    // Brendon's spec: "count of leads for each builder with a post code value in
+    // column W, regardless of the Traffic Channel in column X" (blank, Paid Social,
+    // Paid Search, Organic, Email, Referral, etc.).
+    const leadsPerBuilder = new Map();
+    for (const lead of leadsResult.leads) {
+      if (!lead.postCode || !lead.builderName) continue;
+      const key = lead.builderName.toLowerCase().trim();
+      if (!key) continue;
+      leadsPerBuilder.set(key, (leadsPerBuilder.get(key) || 0) + 1);
+    }
+    // Sort builder keys longest-first so substring lookup prefers more specific names.
+    const knownBuilders = Array.from(leadsPerBuilder.keys()).sort((a, b) => b.length - a.length);
+
+    function totalLeadsForCampaign(campaignName) {
+      const lower = String(campaignName || "").toLowerCase();
+      for (const b of knownBuilders) {
+        if (lower.includes(b)) return leadsPerBuilder.get(b) || 0;
+      }
+      return 0;
+    }
+
+    // PASS 2 — Channel-aware matching (existing per-campaign Leads / postcode metrics).
+    // Only paid Meta or paid Google leads contribute here.
     const leadCounts = new Map();
     const matchedSums = new Map();
     const matchedAny = new Map();
@@ -40,11 +64,15 @@ export default async function handler(req, res) {
     let leadsConsidered = 0;
 
     for (const lead of leadsResult.leads) {
-      const pool = lead.channel === "google" ? googleCampaigns : metaCampaigns;
+      if (lead.channel !== "meta" && lead.channel !== "google") continue;
+      if (!lead.utmCampaign) continue;
       leadsConsidered += 1;
+
+      const pool = lead.channel === "google" ? googleCampaigns : metaCampaigns;
       const m = matchLeadToCampaign(lead.utmCampaign, pool);
       if (!m) { unmatched += 1; continue; }
       leadCounts.set(m.campaignId, (leadCounts.get(m.campaignId) || 0) + 1);
+
       const anyMatches = countMatchesForPostcode(postcodeMap, lead.postCode, 3);
       if (anyMatches > 0) {
         matchedSums.set(m.campaignId, (matchedSums.get(m.campaignId) || 0) + anyMatches);
@@ -61,6 +89,7 @@ export default async function handler(req, res) {
 
     const campaigns = allCampaigns.map((c) => {
       const leads = leadCounts.get(c.campaignId) || 0;
+      const totalLeads = totalLeadsForCampaign(c.campaignName);
       const matched = matchedSums.get(c.campaignId) || 0;
       const any = matchedAny.get(c.campaignId) || 0;
       const strict = matchedStrict.get(c.campaignId) || 0;
@@ -72,8 +101,9 @@ export default async function handler(req, res) {
         campaignId: c.campaignId, campaignName: c.campaignName, jobNumber: c.jobNumber, channel: c.channel,
         spend, clicks,
         impressions: Number(c.impressions) || 0,
-        leads,
+        leads, totalLeads,
         costPerLead: safeDivide(spend, leads),
+        totalCostPerLead: safeDivide(spend, totalLeads),
         conversionRate: safeDivide(leads, clicks),
         matched, matchedAny: any, matchRate: safeDivide(any, leads),
         matchedStrict: strict, matchRateStrict: safeDivide(strict, leads),
@@ -86,7 +116,8 @@ export default async function handler(req, res) {
 
     const totalSpend = sum(campaigns.map((c) => c.spend));
     const totalClicks = sum(campaigns.map((c) => c.clicks));
-    const totalLeads = sum(campaigns.map((c) => c.leads));
+    const totalLeadsCh = sum(campaigns.map((c) => c.leads));
+    const totalLeadsPortfolio = Array.from(leadsPerBuilder.values()).reduce((a, n) => a + n, 0);
     const totalRevCurrent = sum(campaigns.map((c) => c.revenueAtCurrentRpl || 0));
     const totalRevFuture = sum(campaigns.map((c) => c.revenueAtFutureRpl || 0));
 
@@ -94,14 +125,16 @@ export default async function handler(req, res) {
       range: { since, until },
       sources: { meta: metaResult.source, google: googleResult.source, leads: leadsResult.source, builderPostcodes: postcodesResult.source, rpl: rplResult.source },
       totals: {
-        spend: totalSpend, clicks: totalClicks, leads: totalLeads,
-        costPerLead: safeDivide(totalSpend, totalLeads),
-        conversionRate: safeDivide(totalLeads, totalClicks),
+        spend: totalSpend, clicks: totalClicks, leads: totalLeadsCh,
+        totalLeads: totalLeadsPortfolio,
+        costPerLead: safeDivide(totalSpend, totalLeadsCh),
+        totalCostPerLead: safeDivide(totalSpend, totalLeadsPortfolio),
+        conversionRate: safeDivide(totalLeadsCh, totalClicks),
         campaignCount: campaigns.length,
         unmatchedLeads: unmatched,
         leadsConsidered,
-        matched: totalMatched, matchedAny: totalAnyMatched, matchRate: safeDivide(totalAnyMatched, totalLeads),
-        matchedStrict: totalStrict, matchRateStrict: safeDivide(totalStrict, totalLeads),
+        matched: totalMatched, matchedAny: totalAnyMatched, matchRate: safeDivide(totalAnyMatched, totalLeadsCh),
+        matchedStrict: totalStrict, matchRateStrict: safeDivide(totalStrict, totalLeadsCh),
         costPerLeadReferred: safeDivide(totalSpend, totalStrict),
         revenueAtCurrentRpl: totalRevCurrent, revenueAtFutureRpl: totalRevFuture,
       },

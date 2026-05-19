@@ -10,9 +10,9 @@ const COL = {
   STATE: 3,
   CAMPAIGN_TYPE: 10,
   POSTCODE: 22,
-  TRAFFIC_CHANNEL: 23,  // Column X
-  SOURCE: 24,           // Column Y
-  MEDIUM: 25,           // Column Z
+  TRAFFIC_CHANNEL: 23,
+  SOURCE: 24,
+  MEDIUM: 25,
   PAID: 26,
   CAMPAIGN: 27,
 };
@@ -27,13 +27,13 @@ function shouldUseLeadsMock() {
 
 /**
  * Channel classification per Brendon's spec (2026-05-17):
- *
  *   Meta Ads paid:    Traffic Channel = "Paid Social",  Source ∈ {fb, ig},  Medium = "paid"
  *   Google Ads paid:  Traffic Channel = "Paid Search",  Source = "google",  Medium ∈ {paid, cpc}
  *
- * Case-insensitive on trimmed cell values. Leads not matching either rule
- * are dropped — they're organic / direct / email / etc., not paid leads
- * we'd attribute to a campaign.
+ * Returns "meta", "google", or null for anything else (organic, direct, email,
+ * referral, blank, etc.). Non-paid leads are still returned by fetchLeads —
+ * consumer can filter as needed. Used for channel-aware lead-to-campaign
+ * matching on the dashboard's per-campaign Leads column.
  */
 export function classifyLeadChannel(trafficChannel, source, medium) {
   const tc = String(trafficChannel || "").trim().toLowerCase();
@@ -67,14 +67,11 @@ export async function fetchLeads({ since, until } = {}) {
     const createdDate = normaliseDate(r[COL.CREATED_DATE]);
     if (!createdDate) continue;
     if (!withinRange(createdDate, since, until)) continue;
-    const utmCampaign = String(r[COL.CAMPAIGN] || "").trim();
-    if (!utmCampaign) continue;
 
     const trafficChannel = String(r[COL.TRAFFIC_CHANNEL] || "").trim();
     const source = String(r[COL.SOURCE] || "").trim();
     const medium = String(r[COL.MEDIUM] || "").trim();
-    const channel = classifyLeadChannel(trafficChannel, source, medium);
-    if (!channel) continue;
+    const channel = classifyLeadChannel(trafficChannel, source, medium); // may be null
 
     leads.push({
       createdDate,
@@ -87,7 +84,7 @@ export async function fetchLeads({ since, until } = {}) {
       medium: medium.toLowerCase(),
       paid: String(r[COL.PAID] || "").trim().toLowerCase(),
       postCode: String(r[COL.POSTCODE] || "").trim(),
-      utmCampaign,
+      utmCampaign: String(r[COL.CAMPAIGN] || "").trim(),
       channel,
     });
   }
